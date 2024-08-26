@@ -3,6 +3,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 ################################################################################
 
+find_package(Matlab REQUIRED COMPONENTS MEX_COMPILER MX_LIBRARY ENG_LIBRARY)
 
 ################################################################################
 # Options
@@ -17,7 +18,7 @@ option(LIBIGL_WITH_CGAL             "Use CGAL"           ON)
 option(LIBIGL_WITH_COMISO           "Use CoMiso"         OFF)
 option(LIBIGL_WITH_CORK             "Use Cork"           OFF)
 option(LIBIGL_WITH_LIM              "Use LIM"            OFF)
-option(LIBIGL_WITH_MATLAB           "Use Matlab"         OFF)
+option(LIBIGL_WITH_MATLAB           "Use Matlab"         ON)
 option(LIBIGL_WITH_MOSEK            "Use MOSEK"          OFF)
 option(LIBIGL_WITH_PNG              "Use PNG"            OFF)
 option(LIBIGL_WITH_PYTHON           "Use Python"         OFF)
@@ -162,8 +163,34 @@ target_link_libraries(TetWild
 target_include_directories(TetWild PRIVATE src)
 igl_copy_cgal_dll(TetWild)
 
+set(MEX_SOURCE "src/tetwildMex.cpp")
+set(MEX_OUTPUT "tetwildMex")
+message(STATUS "MEX_SOURCE: ${MEX_SOURCE}")
+message(STATUS "MEX_OUTPUT: ${MEX_OUTPUT}")
+add_library(${MEX_OUTPUT} SHARED ${MEX_SOURCE})
+# Not sure if this should be (WIN32) or (MSVC OR MSYS OR MINGW)
+# https://stackoverflow.com/a/40152725/148668
+if(WIN32)
+  # https://stackoverflow.com/a/11095194/148668
+  set_target_properties(${MEX_OUTPUT} PROPERTIES LINK_FLAGS "/export:mexFunction")
+endif()
+target_link_libraries(${MEX_OUTPUT} libTetWild igl::cgal igl::matlab)
+#target_include_directories(${MEX_OUTPUT} PUBLIC ${Matlab_INCLUDE_DIRS})
+#list(APPEND MEX_OUTPUTS ${MEX_OUTPUT})
+
+set_target_properties(${MEX_OUTPUT} PROPERTIES
+    OUTPUT_NAME "tetwild"                   # Set the output filename to "tetwild"
+    SUFFIX ".${Matlab_MEX_EXTENSION}"       # Set the suffix to .mexa64
+    PREFIX ""                               # Remove the "lib" prefix
+    POSITION_INDEPENDENT_CODE OFF           # Remove the -fPIC option
+    INSTALL_RPATH "\$ORIGIN"                # Set RPATH to $ORIGIN
+    COMPILE_FLAGS "${CMAKE_SHARED_LIBRARY_CXX_FLAGS}"
+)
+
+
 # Install
 install(TARGETS TetWild RUNTIME DESTINATION bin)
+install(TARGETS ${MEX_OUTPUT} RUNTIME DESTINATION bin)
 
 ################################################################################
 # Folders for Visual Studio/XCode IDEs
