@@ -95,6 +95,13 @@ public:
     void serialization(const std::string& slz_file);
 };
 
+// Build a GEO::Mesh out of a surface given as plain arrays.
+bool getSurfaceMesh(const Eigen::MatrixXd& V_in, const Eigen::MatrixXi& F_in, GEO::Mesh& geo_sf_mesh);
+
+// Build a GEO::Mesh of the open-boundary curve of a surface given as plain arrays (empty if the
+// surface is closed).
+void getBoundaryMesh(const Eigen::MatrixXd& V_sf, const Eigen::MatrixXi& F_sf, GEO::Mesh& b_mesh);
+
 } // namespace tetwild
 
 #endif //NEW_GTET_MESHREFINEMENT_H

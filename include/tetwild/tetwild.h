@@ -30,6 +30,29 @@ void tetrahedralization(const Eigen::MatrixXd &VI, const Eigen::MatrixXi &FI,
     Eigen::MatrixXd &VO, Eigen::MatrixXi &TO, Eigen::VectorXd &AO, const Args &args = Args());
 
 ///
+/// Refine an existing tetrahedral mesh (e.g. the output of TetGen or CDT) using TetWild's
+/// mesh-improvement passes (edge splitting/collapsing/swapping, vertex smoothing), instead of
+/// building a new tet mesh from scratch via Delaunay tetrahedralization + BSP subdivision.
+///
+/// TI is assumed to already be exactly the region to keep: the boundary of TI (facets incident to
+/// exactly one tet) is treated as the surface to stay within envelope of, and every tet enclosed
+/// by that boundary (which, since TI encloses it by construction, should be every tet of TI) is
+/// kept in the output.
+///
+/// @param[in]  VI    { #VI x 3 input mesh vertices }
+/// @param[in]  TI    { #TI x 4 input mesh tetrahedra }
+/// @param[out] VO    { #VO x 3 output mesh vertices }
+/// @param[out] TO    { #TO x 4 output mesh tetrahedra }
+/// @param[out] AO    { #TO x 1 array of min dihedral angle over each tet }
+/// @param[in]  args  { Extra arguments controlling the behavior of TetWild }
+///
+/// @throws TetWildError if the boundary of TI is not a manifold surface (some facet shared by
+///         more than two tets).
+///
+void tetrahedralizeFromTetmesh(const Eigen::MatrixXd &VI, const Eigen::MatrixXi &TI,
+    Eigen::MatrixXd &VO, Eigen::MatrixXi &TO, Eigen::VectorXd &AO, const Args &args = Args());
+
+///
 /// Extract the boundary facets of a triangle mesh, removing unreferenced vertices
 ///
 /// @param[in]  VI    { #VI x 3 input mesh vertices }

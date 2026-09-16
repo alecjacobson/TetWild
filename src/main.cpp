@@ -14,6 +14,7 @@
 #include <igl/write_triangle_mesh.h>
 #include <igl/writeOBJ.h>
 #include <pymesh/MshSaver.h>
+#include <pymesh/MshLoader.h>
 #include <tetwild/DisableWarnings.h>
 #include <CLI/CLI.hpp>
 #include <tetwild/EnableWarnings.h>
@@ -91,13 +92,21 @@ int main(int argc, char *argv[]) {
     int log_level = 1; // debug
     std::string log_filename;
     std::string input_surface;
+    std::string input_tetmesh;
     std::string output_volume;
     std::string output_surface;
     std::string slz_file;
     Args args;
 
     CLI::App app{"RobustTetMeshing"};
-    app.add_option("input,--input", input_surface, "Input surface mesh INPUT in .off/.obj/.stl/.ply format. (string, required)")->required();
+    auto input_opt = app.add_option("input,--input", input_surface, "Input surface mesh INPUT in .off/.obj/.stl/.ply format. Exactly one of `input` and --input-tetmesh is required. (string)");
+    auto input_tetmesh_opt = app.add_option("--input-tetmesh", input_tetmesh,
+        "Input tetmesh INPUT_TETMESH in .msh format to refine (e.g. TetGen's or CDT's output), instead of "
+        "building a new tet mesh from a surface. The tetmesh is assumed to already be exactly the region to "
+        "keep: its own boundary facets (those incident to exactly one tet) are treated as the surface to stay "
+        "within envelope of. Alternative to `input`. (string)");
+    input_opt->excludes(input_tetmesh_opt);
+    input_tetmesh_opt->excludes(input_opt);
     app.add_option("output,--output", output_volume, "Output tetmesh OUTPUT in .msh or .mesh format. (string, optional, default: input_file+postfix+'.msh')");
     app.add_option("--postfix", args.postfix, "Postfix P for output files. (string, optional, default: '_')");
     auto absolute = app.add_option("-a,--ideal-absolute-edge-length", args.initial_edge_len_abs, "Absolute edge length (not scaled by bbox). -a and -l cannot both be given as arguments.");
@@ -122,6 +131,9 @@ int main(int argc, char *argv[]) {
     } catch (const CLI::ParseError &e) {
         return app.exit(e);
     }
+    if (input_surface.empty() && input_tetmesh.empty()) {
+        return app.exit(CLI::RequiredError("input or --input-tetmesh"));
+    }
 
     Logger::init(!args.is_quiet, log_filename);
     log_level = std::max(0, std::min(6, log_level));
@@ -130,11 +142,12 @@ int main(int argc, char *argv[]) {
 
     //initialization
     GEO::initialize();
+    const std::string &input_file = input_tetmesh.empty() ? input_surface : input_tetmesh;
     if(slz_file != "") {
-        args.working_dir = input_surface.substr(0, slz_file.size() - 4);
+        args.working_dir = input_file.substr(0, slz_file.size() - 4);
     } else {
         if(output_volume.empty())
-            args.working_dir = input_surface.substr(0, input_surface.size() - 4);
+            args.working_dir = input_file.substr(0, input_file.size() - 4);
         else
             args.working_dir = output_volume;
     }
@@ -154,23 +167,41 @@ int main(int argc, char *argv[]) {
 
     //do tetrahedralization
     Eigen::MatrixXd VI, VO;
-    Eigen::MatrixXi FI, TO;
+    Eigen::MatrixXi TO;
     Eigen::VectorXd AO;
-//    igl::read_triangle_mesh(input_surface, VI, FI);
-    GEO::Mesh input;
-    GEO::mesh_load(input_surface, input);
-    VI.resize(input.vertices.nb(), 3);
-    for(int i=0;i<VI.rows();i++)
-        VI.row(i)<<(input.vertices.point(i))[0], (input.vertices.point(i))[1], (input.vertices.point(i))[2];
-    FI.resize(input.facets.nb(), 3);
-    for(int i=0;i<FI.rows();i++)
-        FI.row(i)<<input.facets.vertex(i, 0), input.facets.vertex(i, 1), input.facets.vertex(i, 2);
+    if (!input_tetmesh.empty()) {
+        PyMesh::MshLoader mshLoader(input_tetmesh);
+        Eigen::VectorXd V_flat = mshLoader.get_nodes();
+        Eigen::VectorXi T_flat = mshLoader.get_elements();
+        if (V_flat.rows() == 0 || T_flat.rows() == 0)
+            log_and_throw("Failed to read a non-empty tetmesh from " + input_tetmesh);
+        VI.resize(V_flat.rows() / 3, 3);
+        for (int i = 0; i < VI.rows(); i++)
+            VI.row(i) << V_flat(i * 3), V_flat(i * 3 + 1), V_flat(i * 3 + 2);
+        Eigen::MatrixXi TI(T_flat.rows() / 4, 4);
+        for (int i = 0; i < TI.rows(); i++)
+            for (int j = 0; j < 4; j++)
+                TI(i, j) = T_flat(i * 4 + j);
 
-    if(slz_file != "") {
-        gtet_new_slz(VI, FI, slz_file,
-            {{true, false, true, true}}, VO, TO, AO, args);
+        tetwild::tetrahedralizeFromTetmesh(VI, TI, VO, TO, AO, args);
     } else {
-        tetwild::tetrahedralization(VI, FI, VO, TO, AO, args);
+        Eigen::MatrixXi FI;
+//        igl::read_triangle_mesh(input_surface, VI, FI);
+        GEO::Mesh input;
+        GEO::mesh_load(input_surface, input);
+        VI.resize(input.vertices.nb(), 3);
+        for(int i=0;i<VI.rows();i++)
+            VI.row(i)<<(input.vertices.point(i))[0], (input.vertices.point(i))[1], (input.vertices.point(i))[2];
+        FI.resize(input.facets.nb(), 3);
+        for(int i=0;i<FI.rows();i++)
+            FI.row(i)<<input.facets.vertex(i, 0), input.facets.vertex(i, 1), input.facets.vertex(i, 2);
+
+        if(slz_file != "") {
+            gtet_new_slz(VI, FI, slz_file,
+                {{true, false, true, true}}, VO, TO, AO, args);
+        } else {
+            tetwild::tetrahedralization(VI, FI, VO, TO, AO, args);
+        }
     }
     saveFinalTetmesh(output_volume, output_surface, VO, TO, AO);
 

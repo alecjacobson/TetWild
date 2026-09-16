@@ -223,11 +223,40 @@ add_custom_command(TARGET ${MEX_OUTPUT} POST_BUILD
         "$<TARGET_FILE_DIR:${MEX_OUTPUT}>/tetwild.m"
 )
 
+set(MEX_REFINE_SOURCE "src/tetwildRefineMex.cpp")
+set(MEX_REFINE_OUTPUT "tetwildRefineMex")
+message(STATUS "MEX_REFINE_SOURCE: ${MEX_REFINE_SOURCE}")
+message(STATUS "MEX_REFINE_OUTPUT: ${MEX_REFINE_OUTPUT}")
+add_library(${MEX_REFINE_OUTPUT} SHARED ${MEX_REFINE_SOURCE})
+if(WIN32)
+  set_target_properties(${MEX_REFINE_OUTPUT} PROPERTIES LINK_FLAGS "/export:mexFunction")
+endif()
+target_link_libraries(${MEX_REFINE_OUTPUT} libTetWild igl::cgal igl::matlab)
+
+set_target_properties(${MEX_REFINE_OUTPUT} PROPERTIES
+    OUTPUT_NAME "tetwild_refine"            # Set the output filename to "tetwild_refine"
+    SUFFIX ".${Matlab_MEX_EXTENSION}"       # Set the suffix to .mexa64
+    PREFIX ""                               # Remove the "lib" prefix
+    POSITION_INDEPENDENT_CODE OFF           # Remove the -fPIC option
+    INSTALL_RPATH "\$ORIGIN"                # Set RPATH to $ORIGIN
+    COMPILE_FLAGS "${CMAKE_SHARED_LIBRARY_CXX_FLAGS}"
+)
+
+# Copy the help stub (tetwild_refine.m) next to the compiled mex binary, so
+# that `help tetwild_refine` in MATLAB prints something meaningful.
+add_custom_command(TARGET ${MEX_REFINE_OUTPUT} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/tetwild_refine.m"
+        "$<TARGET_FILE_DIR:${MEX_REFINE_OUTPUT}>/tetwild_refine.m"
+)
+
 
 # Install
 install(TARGETS TetWild RUNTIME DESTINATION bin)
 install(TARGETS ${MEX_OUTPUT} RUNTIME DESTINATION bin)
 install(FILES src/tetwild.m DESTINATION bin)
+install(TARGETS ${MEX_REFINE_OUTPUT} RUNTIME DESTINATION bin)
+install(FILES src/tetwild_refine.m DESTINATION bin)
 
 ################################################################################
 # Folders for Visual Studio/XCode IDEs

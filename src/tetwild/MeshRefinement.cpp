@@ -1230,8 +1230,6 @@ void MeshRefinement::getTrackedSurface(Eigen::MatrixXd& V, Eigen::MatrixXi& F) {
     }
 }
 
-namespace {
-
 bool getSurfaceMesh(const Eigen::MatrixXd& V_in, const Eigen::MatrixXi& F_in, GEO::Mesh& geo_sf_mesh){
     geo_sf_mesh.vertices.clear();
     geo_sf_mesh.vertices.create_vertices((int) V_in.rows());
@@ -1252,7 +1250,7 @@ bool getSurfaceMesh(const Eigen::MatrixXd& V_in, const Eigen::MatrixXi& F_in, GE
     return true;
 }
 
-void getBoundaryMesh(const Eigen::MatrixXd& V_sf, const Eigen::MatrixXi& F_sf, GEO::Mesh& b_mesh){
+void getBoundaryMesh(const Eigen::MatrixXd& V_sf, const Eigen::MatrixXi& F_sf, GEO::Mesh& b_mesh) {
     std::vector<std::vector<int>> conn_f4v(V_sf.rows(), std::vector<int>());
     for (int i = 0; i < F_sf.rows(); i++) {
         for (int j = 0; j < 3; j++)
@@ -1303,8 +1301,6 @@ void getBoundaryMesh(const Eigen::MatrixXd& V_sf, const Eigen::MatrixXi& F_sf, G
         b_mesh.facets.set_vertex(i, 2, v_ids_map[b_edges[i][1]]);
     }
 }
-
-} // anonymous namespace
 
 bool MeshRefinement::deserialization(const Eigen::MatrixXd& V_in, const Eigen::MatrixXi& F_in,
     const std::string& slz_file)

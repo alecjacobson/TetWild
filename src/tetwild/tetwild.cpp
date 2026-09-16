@@ -22,6 +22,9 @@
 #include <igl/remove_unreferenced.h>
 #include <pymesh/MshSaver.h>
 #include <geogram/mesh/mesh.h>
+#include <map>
+#include <array>
+#include <utility>
 
 
 namespace tetwild {
@@ -397,6 +400,109 @@ void tetwild_stage_two(const Args &args, State &state,
     MR.refine(state.ENERGY_AMIPS);
 
     extractFinalTetmesh(MR, VO, TO, AO, args, state); //do winding number and output the tetmesh
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void tetrahedralizeFromTetmesh(const Eigen::MatrixXd &VI, const Eigen::MatrixXi &TI,
+                               Eigen::MatrixXd &VO, Eigen::MatrixXi &TO, Eigen::VectorXd &AO,
+                               const Args &args_in)
+{
+    GEO::initialize();
+
+    igl::Timer igl_timer;
+    igl_timer.start();
+
+    if (TI.cols() != 4)
+        log_and_throw("tetrahedralizeFromTetmesh: TI should have 4 columns");
+    if ((TI.array() < 0).any() || (TI.array() >= VI.rows()).any())
+        log_and_throw("tetrahedralizeFromTetmesh: TI has out-of-range vertex indices");
+
+    // Deliberately don't force args.smooth_open_boundary here: the default (false) routes
+    // extraction through InoutFiltering, which retries with a flipped surface if the winding
+    // number test comes back empty. That fallback matters because the boundary-facet winding we
+    // derive from TI's own topology (no externally-known outward direction) can come out globally
+    // reversed relative to what TetWild's own is_surface_fs sign convention expects.
+    const Args &args = args_in;
+
+    State state(args, VI);
+
+    std::vector<TetVertex> tet_vertices(VI.rows());
+    for (int i = 0; i < VI.rows(); i++)
+        tet_vertices[i].pos = Point_3(VI(i, 0), VI(i, 1), VI(i, 2));
+
+    // Fix the orientation of every tet to match tetwild's own convention (CGAL::POSITIVE).
+    std::vector<std::array<int, 4>> tets(TI.rows());
+    for (int i = 0; i < TI.rows(); i++) {
+        std::array<int, 4> t = {{TI(i, 0), TI(i, 1), TI(i, 2), TI(i, 3)}};
+        if (CGAL::orientation(tet_vertices[t[0]].pos, tet_vertices[t[1]].pos,
+                              tet_vertices[t[2]].pos, tet_vertices[t[3]].pos) != CGAL::POSITIVE)
+            std::swap(t[2], t[3]);
+        tets[i] = t;
+    }
+
+    // A facet shared by exactly one tet is on the boundary; by exactly two, interior. Anything
+    // else means the input isn't a manifold tetrahedral complex.
+    std::map<std::array<int, 3>, std::vector<std::pair<int, int>>> face_occurrences;
+    for (int i = 0; i < tets.size(); i++) {
+        for (int j = 0; j < 4; j++) {
+            std::array<int, 3> f = {{tets[i][(j + 1) % 4], tets[i][(j + 2) % 4], tets[i][(j + 3) % 4]}};
+            std::sort(f.begin(), f.end());
+            face_occurrences[f].push_back({i, j});
+        }
+    }
+
+    std::vector<std::array<int, 4>> is_surface_fs(tets.size(),
+        std::array<int, 4>({{state.NOT_SURFACE, state.NOT_SURFACE, state.NOT_SURFACE, state.NOT_SURFACE}}));
+    std::vector<std::array<int, 3>> boundary_faces;
+    for (const auto &kv : face_occurrences) {
+        if (kv.second.size() == 1) {
+            int i = kv.second[0].first, j = kv.second[0].second;
+            is_surface_fs[i][j] = 1;
+            std::array<int, 3> v_ids = {{tets[i][(j + 1) % 4], tets[i][(j + 2) % 4], tets[i][(j + 3) % 4]}};
+            for (int v_id : v_ids)
+                tet_vertices[v_id].is_on_surface = true;
+            // Orient the boundary facet outward, following the same check TetWild's own
+            // InoutFiltering::getSurface() uses.
+            if (CGAL::orientation(tet_vertices[v_ids[0]].pos, tet_vertices[v_ids[1]].pos,
+                                  tet_vertices[v_ids[2]].pos, tet_vertices[tets[i][j]].pos) != CGAL::POSITIVE)
+                std::swap(v_ids[0], v_ids[2]);
+            boundary_faces.push_back(v_ids);
+        } else if (kv.second.size() != 2) {
+            log_and_throw("tetrahedralizeFromTetmesh: TI's boundary is not manifold "
+                          "(a facet is shared by more than two tets)");
+        }
+    }
+
+    Eigen::MatrixXi FI_bd(boundary_faces.size(), 3);
+    for (int i = 0; i < FI_bd.rows(); i++)
+        for (int j = 0; j < 3; j++)
+            FI_bd(i, j) = boundary_faces[i][j];
+
+    GEO::Mesh geo_sf_mesh;
+    getSurfaceMesh(VI, FI_bd, geo_sf_mesh);
+    GEO::Mesh geo_b_mesh; // empty: TI's boundary is closed by construction (every facet has
+                          // exactly 1 or 2 incident tets), so there is no open boundary curve.
+    state.is_mesh_closed = true;
+
+    for (int i = 0; i < tets.size(); i++)
+        for (int j = 0; j < 4; j++)
+            tet_vertices[tets[i][j]].conn_tets.insert(i);
+
+    logger().info("Refinement initializing...");
+    MeshRefinement MR(geo_sf_mesh, geo_b_mesh, args, state);
+    MR.tet_vertices = std::move(tet_vertices);
+    MR.tets = std::move(tets);
+    MR.is_surface_fs = std::move(is_surface_fs);
+    MR.prepareData();
+    logger().info("Refinement initialization done!");
+
+    MR.refine(state.ENERGY_AMIPS);
+
+    extractFinalTetmesh(MR, VO, TO, AO, args, state);
+
+    double total_time = igl_timer.getElapsedTime();
+    logger().info("Total time for all stages = {}s", total_time);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
