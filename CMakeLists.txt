@@ -215,10 +215,19 @@ set_target_properties(${MEX_OUTPUT} PROPERTIES
     COMPILE_FLAGS "${CMAKE_SHARED_LIBRARY_CXX_FLAGS}"
 )
 
+# Copy the help stub (tetwild.m) next to the compiled mex binary, so that
+# `help tetwild` in MATLAB prints something meaningful.
+add_custom_command(TARGET ${MEX_OUTPUT} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/tetwild.m"
+        "$<TARGET_FILE_DIR:${MEX_OUTPUT}>/tetwild.m"
+)
+
 
 # Install
 install(TARGETS TetWild RUNTIME DESTINATION bin)
 install(TARGETS ${MEX_OUTPUT} RUNTIME DESTINATION bin)
+install(FILES src/tetwild.m DESTINATION bin)
 
 ################################################################################
 # Folders for Visual Studio/XCode IDEs
