@@ -59,6 +59,34 @@ endif()
 
 set(TETWILD_EXTERNAL "${CMAKE_CURRENT_SOURCE_DIR}/extern")
 
+# macOS / Apple Silicon compatibility
+if(APPLE)
+	# The vendored CGAL (via libigl) predates Boost dropping the implicit
+	# Boost.MPL includes that CGAL_SetupCGALDependencies.cmake relies on, so a
+	# recent Homebrew `boost` (>= ~1.86) fails to compile. Prefer an older
+	# Homebrew keg if present and the caller hasn't already picked a Boost.
+	if(NOT DEFINED BOOST_ROOT AND NOT DEFINED ENV{BOOST_ROOT})
+		execute_process(
+			COMMAND brew --prefix boost@1.85
+			OUTPUT_VARIABLE TETWILD_HOMEBREW_BOOST_1_85
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+			ERROR_QUIET
+			RESULT_VARIABLE TETWILD_HOMEBREW_BOOST_1_85_RESULT
+		)
+		if(TETWILD_HOMEBREW_BOOST_1_85_RESULT EQUAL 0 AND EXISTS "${TETWILD_HOMEBREW_BOOST_1_85}")
+			message(STATUS "Using Homebrew boost@1.85 (${TETWILD_HOMEBREW_BOOST_1_85}): newer Boost removes implicit Boost.MPL includes that this vendored CGAL relies on")
+			set(BOOST_ROOT "${TETWILD_HOMEBREW_BOOST_1_85}" CACHE PATH "Boost root")
+			set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "")
+		else()
+			message(WARNING "Homebrew boost@1.85 not found (try `brew install boost@1.85`); falling back to the default Boost, which may fail to compile the vendored CGAL")
+		endif()
+	endif()
+
+	# Vendored Boost.Move / libigl headers assume <utility>/<cassert> are
+	# transitively included by other standard headers; force-include them.
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apple_compat_shim.hpp")
+endif()
+
 # Color output
 include(UseColors)
 

@@ -11,7 +11,11 @@ include(TetWildDownloadExternal)
 
 # geogram
 if(NOT TARGET geogram)
-	tetwild_download_geogram()
+	# geogram is vendored (with local patches for building on Apple Silicon)
+	# under extern/geogram rather than downloaded, so it is not re-fetched here.
+	if(NOT EXISTS ${TETWILD_EXTERNAL}/geogram/CMakeLists.txt)
+		tetwild_download_geogram()
+	endif()
 	include(geogram)
 endif()
 

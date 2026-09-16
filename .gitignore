@@ -1,8 +1,8 @@
 # Extern
+/.cache
 /extern/.cache
 /extern/cli11
 /extern/fmt
-/extern/geogram
 /extern/libigl
 /extern/spdlog
 
