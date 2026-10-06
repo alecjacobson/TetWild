@@ -2,6 +2,7 @@
 
 #include <tetwild/tetwild.h>
 #include <tetwild/Logger.h>
+#include "tetwildMexArgs.h"
 
 #include <igl/matlab/parse_rhs.h>
 #include <igl/matlab/prepare_lhs.h>
@@ -36,6 +37,7 @@ void mexFunction(
   Eigen::VectorXd AO;
 
   tetwild::Args args;
+  parse_tetwild_args(2, nrhs, prhs, args, /*allow_voxel_stuffing_and_smooth_open_boundary=*/false);
   std::string log_filename = "tetwild.log";
   tetwild::Logger::init(false, log_filename);
 
